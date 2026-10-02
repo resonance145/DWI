@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>깨어진 세계 · 조사 지문</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Nanum+Myeongjo:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"
+        onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';document.head.appendChild(s);"></script>
+<style>
+  :root {
+    --abyss: #0a0e1f;
+    --panel: #11172e;
+    --tile: #161d3a;
+    --line: #262f57;
+    --text: #e6e4f2;
+    --muted: #8b90b3;
+    --glow: #a77bf3;
+    --glow-soft: rgba(167, 123, 243, 0.18);
+    --ok: #7fd1b9;
+    --warn: #f2a65a;
+    --ui: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+    --script: 'Nanum Myeongjo', 'Batang', 'AppleMyungjo', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: radial-gradient(ellipse at 30% 0%, #141a3a 0%, var(--abyss) 60%);
+    color: var(--text); font-family: var(--ui); font-size: 14px; line-height: 1.5;
+    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, .tile:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+
+  /* ── 상단 막대 ── */
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 20px; border-bottom: 1px solid var(--line); background: rgba(10, 14, 31, 0.7);
+  }
+  .brand { font-family: var(--script); font-weight: 700; font-size: 17px; letter-spacing: 0.02em; margin-right: 6px; }
+  .btn {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 13px;
+  }
+  .btn:hover { border-color: var(--glow); }
+  .btn.primary { background: #2a1d4d; border-color: #5b3fa0; }
+  .file-name { color: var(--muted); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .floors { display: flex; gap: 4px; }
+  .floor {
+    background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 5px 12px; font-size: 13px; color: var(--muted);
+  }
+  .floor[aria-pressed="true"] { color: var(--text); border-color: var(--line); background: var(--panel); }
+  .floor .count { font-size: 11px; color: var(--glow); margin-left: 4px; }
+  .status { margin-left: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status.saved .dot { background: var(--ok); }
+  .status.saving .dot { background: var(--glow); }
+  .status.error, .status.dirty { color: var(--warn); }
+  .status.error .dot, .status.dirty .dot { background: var(--warn); }
+
+  /* ── 본문 ── */
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 0; }
+  .board-wrap { overflow: auto; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
+  .board { display: grid; grid-template-columns: 20px auto; grid-template-rows: 20px auto; gap: 6px; }
+  .cols, .rows { display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
+  .cols { grid-template-columns: repeat(9, 1fr); grid-column: 2; }
+  .rows { grid-template-rows: repeat(9, 1fr); grid-row: 2; }
+  .cols span, .rows span { display: flex; align-items: center; justify-content: center; }
+  .grid { display: grid; grid-template-columns: repeat(9, auto); gap: 5px; }
+  .block { display: grid; grid-template-columns: repeat(3, var(--t)); grid-template-rows: repeat(3, var(--t)); gap: 1px; }
+  .board { --t: clamp(16px, calc((100vh - 170px) / 29), 26px); }
+  .tile {
+    position: relative; background: var(--tile); border: 0; padding: 0; border-radius: 2px;
+  }
+  .tile .tint { position: absolute; inset: 0; border-radius: 2px; opacity: 0.32; pointer-events: none; }
+  .tile.has::after {
+    content: ''; position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; transform: translate(-50%, -50%);
+    border-radius: 50%; background: var(--glow); box-shadow: 0 0 8px 2px rgba(167, 123, 243, 0.65);
+  }
+  .tile.selected { box-shadow: 0 0 0 2px var(--text); z-index: 1; }
+  .tile:hover { box-shadow: 0 0 0 1px var(--glow); z-index: 1; }
+
+  .empty-state { margin: auto; text-align: center; color: var(--muted); max-width: 360px; }
+  .empty-state p { margin: 0 0 14px; }
+  .empty-state .note { font-size: 12px; margin-top: 16px; }
+
+  /* ── 지문 패널 ── */
+  aside { border-left: 1px solid var(--line); background: rgba(17, 23, 46, 0.85); display: flex; flex-direction: column; min-height: 0; }
+  .where { padding: 18px 22px 12px; border-bottom: 1px solid var(--line); }
+  .where h2 { margin: 0; font-family: var(--script); font-size: 20px; font-weight: 700; }
+  .where .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .lines { list-style: none; margin: 0; padding: 14px 14px; overflow: auto; flex: 1; counter-reset: ln; }
+  .lines li { display: grid; grid-template-columns: 1fr auto; align-items: stretch; margin-bottom: 8px; }
+  .line {
+    text-align: left; background: transparent; border: 1px solid transparent; border-left: 3px solid var(--glow);
+    border-radius: 4px; padding: 9px 12px 9px 12px; font-family: var(--script); font-size: 15px; line-height: 1.7;
+    counter-increment: ln; position: relative; padding-left: 36px;
+  }
+  .line::before { content: counter(ln); position: absolute; left: 12px; top: 11px; font-family: var(--ui); font-size: 11px; color: var(--muted); }
+  .line:hover { background: var(--glow-soft); }
+  .line.copied { border-left-color: var(--line); color: var(--muted); }
+  .line.copied::after { content: '복사됨'; font-family: var(--ui); font-size: 11px; color: var(--ok); margin-left: 8px; }
+  .line.flash { background: rgba(127, 209, 185, 0.16); }
+  .del {
+    background: transparent; border: 0; color: var(--muted); padding: 0 10px; border-radius: 4px; font-size: 13px;
+  }
+  .del:hover { color: var(--warn); background: rgba(242, 166, 90, 0.1); }
+  .panel-empty { color: var(--muted); padding: 24px 22px; }
+  .find { padding: 12px 14px; border-bottom: 1px solid var(--line); position: relative; }
+  .find input {
+    width: 100%; background: var(--abyss); border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+    padding: 7px 10px; font: inherit; font-size: 13px;
+  }
+  .find input:focus { outline: none; border-color: var(--glow); }
+  .results { list-style: none; margin: 6px 0 0; padding: 0; max-height: 240px; overflow: auto; }
+  .results button {
+    width: 100%; display: flex; justify-content: space-between; gap: 10px; background: transparent; border: 0;
+    padding: 7px 8px; border-radius: 4px; text-align: left;
+  }
+  .results button:hover, .results button:focus-visible { background: var(--glow-soft); }
+  .results .t { font-family: var(--script); font-weight: 700; }
+  .results .w { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .results .dup { color: var(--warn); font-size: 11px; margin-left: 6px; }
+  .results .none { color: var(--muted); font-size: 12px; padding: 6px 8px; }
+  .where h2.untitled { color: var(--muted); font-weight: 400; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .actions .btn.danger:hover { border-color: var(--warn); color: var(--warn); }
+  .keys { color: var(--muted); font-size: 11px; padding: 0 14px 12px; }
+  kbd { font-family: var(--ui); font-size: 11px; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1d2446; border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    main { grid-template-columns: 1fr; }
+    aside { border-left: 0; border-top: 1px solid var(--line); min-height: 50vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">조사 지문</span>
+  <button class="btn primary" id="open">엑셀 열기</button>
+  <button class="btn hidden" id="reload" title="엑셀에서 고친 내용을 다시 읽어요">다시 읽기</button>
+  <span class="file-name" id="fileName"></span>
+  <nav class="floors" id="floors" aria-label="층"></nav>
+  <div class="status" id="status"><span class="dot"></span><span id="statusText">파일을 열어 주세요</span>
+    <button class="btn hidden" id="retry">다시 저장</button>
+    <button class="btn hidden" id="download">수정된 엑셀 받기</button>
+  </div>
+  <input type="file" id="fileInput" accept=".xlsx" class="hidden">
+</header>
+
+<main>
+  <section class="board-wrap" id="boardWrap">
+    <div class="empty-state" id="emptyState">
+      <p>조사 지문 엑셀 파일을 열면, 층마다 9×9 블럭 지도가 나타나요.</p>
+      <button class="btn primary" id="open2">엑셀 열기</button>
+      <p class="note">크롬·엣지에서 열면 지운 내용이 엑셀 파일에 바로 저장돼요. 다른 브라우저에서는 수정된 파일을 내려받아 원래 파일과 바꿔 주세요.</p>
+    </div>
+    <div class="board hidden" id="board">
+      <div class="cols" id="cols"></div>
+      <div class="rows" id="rows"></div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="find">
+      <input id="find" type="search" placeholder="제목으로 찾기 (예: 메모1)" aria-label="제목으로 찾기" autocomplete="off">
+      <ul class="results hidden" id="results"></ul>
+    </div>
+    <div class="where">
+      <h2 id="whereTitle">—</h2>
+      <div class="sub" id="whereSub">지문이 있는 칸은 보라색으로 빛나요.</div>
+    </div>
+    <ul class="lines" id="lines"></ul>
+    <div class="panel-empty" id="panelEmpty">칸을 누르면 지문이 한 줄씩 나와요. 줄을 누르면 복사됩니다.</div>
+    <div class="actions hidden" id="actions">
+      <button class="btn danger" id="clearTile">이 칸 지문 모두 지우기</button>
+      <button class="btn" id="undo" disabled>되돌리기</button>
+    </div>
+    <div class="keys"><kbd>Space</kbd> 다음 줄 복사 · <kbd>방향키</kbd> 칸 이동 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · <kbd>/</kbd> 제목 찾기</div>
+  </aside>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ─────────────────────────────────────────────
+   엑셀 구조 (층 시트 하나 = 한 층)
+   · 2행: 블럭 열 번호 1~9 (3칸씩 병합)  · A열: 블럭 행 A~I (3칸씩 병합)
+   · 타일 칸: B3 ~ AB29 (27×27). 타일(세계 좌표 wx, wy) → 행 3+wy, 열 2+wx
+   · '사용법' 시트는 층으로 치지 않음
+   ───────────────────────────────────────────── */
+const ROWS = 'ABCDEFGHI';
+const SPOT = ['북서쪽', '북쪽', '북동쪽', '서쪽', '가운데', '동쪽', '남서쪽', '남쪽', '남동쪽'];
+const SKIP_SHEETS = ['사용법'];
+
+let wb = null, fileHandle = null, fileName = '', floors = [], floorIdx = 0;
+let sel = null;            // {wx, wy}
+let copied = new Set();    // `${floor}|${wx}|${wy}|${lineIndex}` (화면용, 저장 안 함)
+const undoStack = [];
+let saveChain = Promise.resolve();
+
+const $ = id => document.getElementById(id);
+
+/* ── 셀 텍스트 ── */
+function cellText(cell) {
+  const v = cell.value;
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v.richText) return v.richText.map(r => r.text).join('');
+  if (v.text != null) return String(v.text);
+  if (v.result != null) return String(v.result);
+  return '';
+}
+const tileCell = (ws, wx, wy) => ws.getCell(3 + wy, 2 + wx);
+function tileLines(ws, wx, wy) { return cellText(tileCell(ws, wx, wy)).replace(/\r/g, '').split('\n'); }
+const TITLE_RE = /^\s*\[(.+?)\]\s*$/;
+function titleIndex(lines) {                       // 첫 번째 내용 줄이 [제목]이면 그 줄 번호
+  const first = lines.findIndex(t => t.trim() !== '');
+  return first >= 0 && TITLE_RE.test(lines[first]) ? first : -1;
+}
+function tileTitle(lines) { const k = titleIndex(lines); return k >= 0 ? lines[k].match(TITLE_RE)[1].trim() : ''; }
+function visibleLines(lines) { const k = titleIndex(lines); return lines.map((t, i) => ({ t, i })).filter(o => o.i !== k && o.t.trim() !== ''); }
+function fillColor(cell) {
+  const f = cell.fill;
+  if (f && f.type === 'pattern' && f.pattern === 'solid' && f.fgColor && f.fgColor.argb) return '#' + f.fgColor.argb.slice(-6);
+  return null;
+}
+
+/* ── 파일 열기 ── */
+async function openFile() {
+  if (!window.ExcelJS) { toast('엑셀 도구를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.'); return; }
+  if (window.showOpenFilePicker) {
+    try {
+      const [h] = await window.showOpenFilePicker({ types: [{ description: '엑셀 파일', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
+      fileHandle = h;
+      await loadFromFile(await h.getFile());
+    } catch (e) { if (e.name !== 'AbortError') toast('파일을 열지 못했어요: ' + e.message); }
+  } else {
+    $('fileInput').click();
+  }
+}
+$('fileInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  fileHandle = null; await loadFromFile(f); e.target.value = '';
+});
+async function loadFromFile(file) {
+  const book = new ExcelJS.Workbook();
+  try { await book.xlsx.load(await file.arrayBuffer()); }
+  catch (e) { toast('엑셀 파일을 읽지 못했어요. .xlsx 파일인지 확인해 주세요.'); return; }
+  wb = book; fileName = file.name;
+  floors = wb.worksheets.filter(ws => !SKIP_SHEETS.includes(ws.name) && ws.state !== 'hidden');
+  if (!floors.length) { toast('층 시트를 찾지 못했어요.'); return; }
+  const prev = floors.findIndex(f => f.name === (floors[floorIdx] && floors[floorIdx].name));
+  floorIdx = prev >= 0 ? prev : 0;
+  copied = new Set(); undoStack.length = 0; $('undo').disabled = true;
+  $('fileName').textContent = fileName;
+  $('emptyState').classList.add('hidden'); $('board').classList.remove('hidden');
+  $('reload').classList.toggle('hidden', !fileHandle);
+  setStatus(fileHandle ? 'saved' : 'idle', fileHandle ? '엑셀과 연결됨' : '읽기 전용으로 열림 (지우면 내려받기로 저장)');
+  renderFloors(); renderGrid(); renderPanel();
+}
+$('open').onclick = openFile; $('open2').onclick = openFile;
+$('reload').onclick = async () => { if (fileHandle) { await loadFromFile(await fileHandle.getFile()); toast('엑셀 내용을 다시 읽었어요.'); } };
+
+/* ── 그리기 ── */
+function countFloor(ws) {
+  let n = 0;
+  for (let wy = 0; wy < 27; wy++) for (let wx = 0; wx < 27; wx++) if (visibleLines(tileLines(ws, wx, wy)).length) n++;
+  return n;
+}
+function renderFloors() {
+  const nav = $('floors'); nav.innerHTML = '';
+  floors.forEach((ws, i) => {
+    const b = document.createElement('button');
+    b.className = 'floor'; b.setAttribute('aria-pressed', i === floorIdx);
+    const n = countFloor(ws);
+    b.innerHTML = `${ws.name}${n ? `<span class="count">${n}</span>` : ''}`;
+    b.title = n ? `남은 지문 ${n}칸` : '남은 지문 없음';
+    b.onclick = () => { floorIdx = i; sel = null; renderFloors(); renderGrid(); renderPanel(); };
+    nav.appendChild(b);
+  });
+}
+function renderGrid() {
+  const ws = floors[floorIdx];
+  $('cols').innerHTML = [...Array(9)].map((_, i) => `<span>${i + 1}</span>`).join('');
+  $('rows').innerHTML = [...ROWS].map(r => `<span>${r}</span>`).join('');
+  const grid = $('grid'); grid.innerHTML = '';
+  for (let by = 0; by < 9; by++) for (let bx = 0; bx < 9; bx++) {
+    const blk = document.createElement('div'); blk.className = 'block';
+    for (let vy = 0; vy < 3; vy++) for (let vx = 0; vx < 3; vx++) {
+      const wx = bx * 3 + vx, wy = by * 3 + vy, cell = tileCell(ws, wx, wy);
+      const t = document.createElement('button');
+      t.className = 'tile'; t.dataset.wx = wx; t.dataset.wy = wy;
+      const col = fillColor(cell);
+      if (col) t.innerHTML = `<span class="tint" style="background:${col}"></span>`;
+      const vis = visibleLines(tileLines(ws, wx, wy));
+      const ttl = tileTitle(tileLines(ws, wx, wy));
+      if (vis.length) { t.classList.add('has'); t.title = ttl ? `[${ttl}] ${vis[0].t}` : vis[0].t; }
+      t.setAttribute('aria-label', `${ROWS[by]}${bx + 1} ${SPOT[vy * 3 + vx]}${ttl ? `, ${ttl}` : ''}${vis.length ? `, 지문 ${vis.length}줄` : ''}`);
+      if (sel && sel.wx === wx && sel.wy === wy) t.classList.add('selected');
+      t.onclick = () => { sel = { wx, wy }; renderGrid(); renderPanel(); };
+      blk.appendChild(t);
+    }
+    grid.appendChild(blk);
+  }
+}
+function renderPanel() {
+  const ul = $('lines'); ul.innerHTML = '';
+  if (!wb || !sel) {
+    $('whereTitle').textContent = '—'; $('whereTitle').classList.remove('untitled');
+    $('whereSub').textContent = '지문이 있는 칸은 보라색으로 빛나요.';
+    $('panelEmpty').classList.remove('hidden'); $('actions').classList.add('hidden'); return;
+  }
+  const ws = floors[floorIdx], { wx, wy } = sel;
+  const bx = Math.floor(wx / 3), by = Math.floor(wy / 3);
+  const all = tileLines(ws, wx, wy), ttl = tileTitle(all);
+  const vis = visibleLines(all);
+  const h = $('whereTitle');
+  h.textContent = ttl || (vis.length ? '제목 없음' : `${ws.name} · ${ROWS[by]}${bx + 1}`);
+  h.classList.toggle('untitled', !ttl);
+  $('whereSub').textContent = `${ws.name} · ${ROWS[by]}${bx + 1} ${SPOT[(wy % 3) * 3 + (wx % 3)]} 칸 · 엑셀 ${tileCell(ws, wx, wy).address}`;
+  $('panelEmpty').classList.toggle('hidden', vis.length > 0);
+  $('panelEmpty').textContent = '이 칸에는 남은 지문이 없어요.';
+  $('actions').classList.toggle('hidden', vis.length === 0);
+  vis.forEach(({ t, i }) => {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.className = 'line'; b.textContent = t;
+    if (copied.has(key(i))) b.classList.add('copied');
+    b.onclick = () => copyLine(i, b);
+    const d = document.createElement('button');
+    d.className = 'del'; d.textContent = '✕'; d.title = '이 줄 지우기 (엑셀에서도 지워져요)';
+    d.setAttribute('aria-label', '이 줄 지우기');
+    d.onclick = () => deleteLines(i);
+    li.append(b, d); ul.appendChild(li);
+  });
+}
+const key = i => `${floors[floorIdx].name}|${sel.wx}|${sel.wy}|${i}`;
+
+/* ── 제목 찾기 ── */
+function allTitles() {
+  const out = [];
+  floors.forEach((ws, fi) => {
+    for (let wy = 0; wy < 27; wy++) for (let wx = 0; wx < 27; wx++) {
+      const lines = tileLines(ws, wx, wy), t = tileTitle(lines);
+      if (t && visibleLines(lines).length) out.push({ t, fi, wx, wy, floor: ws.name });
+    }
+  });
+  const seen = {}; out.forEach(o => seen[o.t] = (seen[o.t] || 0) + 1);
+  out.forEach(o => o.dup = seen[o.t] > 1);
+  return out;
+}
+function renderResults() {
+  const q = $('find').value.trim().toLowerCase(), ul = $('results');
+  if (!wb || !q) { ul.classList.add('hidden'); ul.innerHTML = ''; return; }
+  const hits = allTitles().filter(o => o.t.toLowerCase().includes(q));
+  ul.classList.remove('hidden');
+  ul.innerHTML = hits.length ? '' : '<li class="none">그 제목의 지문이 없어요.</li>';
+  hits.forEach(o => {
+    const li = document.createElement('li'), b = document.createElement('button');
+    const bx = Math.floor(o.wx / 3), by = Math.floor(o.wy / 3);
+    b.innerHTML = `<span><span class="t"></span>${o.dup ? '<span class="dup">같은 제목 있음</span>' : ''}</span><span class="w">${o.floor} · ${ROWS[by]}${bx + 1} ${SPOT[(o.wy % 3) * 3 + (o.wx % 3)]}</span>`;
+    b.querySelector('.t').textContent = o.t;
+    b.onclick = () => { floorIdx = o.fi; sel = { wx: o.wx, wy: o.wy }; $('find').value = ''; renderResults(); renderFloors(); renderGrid(); renderPanel(); };
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+$('find').addEventListener('input', renderResults);
+$('find').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const f = $('results').querySelector('button'); if (f) f.click(); }
+  if (e.key === 'Escape') { $('find').value = ''; renderResults(); $('find').blur(); }
+});
+
+/* ── 복사 ── */
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy'); ta.remove(); return ok;
+  }
+}
+async function copyLine(i, el) {
+  const lines = tileLines(floors[floorIdx], sel.wx, sel.wy);
+  if (await copyText(lines[i])) {
+    copied.add(key(i));
+    if (el) { el.classList.add('copied', 'flash'); setTimeout(() => el.classList.remove('flash'), 300); }
+  } else toast('복사하지 못했어요. 브라우저 권한을 확인해 주세요.');
+}
+function copyNext() {
+  if (!sel) return;
+  const vis = visibleLines(tileLines(floors[floorIdx], sel.wx, sel.wy));
+  const next = vis.find(o => !copied.has(key(o.i)));
+  if (!next) { toast('이 칸의 지문을 모두 복사했어요.'); return; }
+  const idx = vis.indexOf(next);
+  copyLine(next.i, $('lines').children[idx] && $('lines').children[idx].firstChild);
+}
+
+/* ── 지우기 / 되돌리기 ── */
+function setCellLines(ws, wx, wy, lines) {
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  tileCell(ws, wx, wy).value = lines.length ? lines.join('\n') : null;
+}
+function deleteLines(i /* undefined = 칸 전체 */) {
+  const ws = floors[floorIdx], { wx, wy } = sel, cell = tileCell(ws, wx, wy);
+  undoStack.push({ sheet: ws.name, wx, wy, prev: cell.value });
+  $('undo').disabled = false;
+  const lines = tileLines(ws, wx, wy);
+  if (i !== undefined) lines.splice(i, 1);
+  // 남은 지문 줄이 없으면 제목까지 함께 지운다
+  setCellLines(ws, wx, wy, (i === undefined || visibleLines(lines).length === 0) ? [] : lines);
+  copied = new Set([...copied].filter(k => !k.startsWith(`${ws.name}|${wx}|${wy}|`)));
+  renderFloors(); renderGrid(); renderPanel(); requestSave();
+}
+function undo() {
+  const u = undoStack.pop(); if (!u) return;
+  const ws = wb.getWorksheet(u.sheet);
+  tileCell(ws, u.wx, u.wy).value = u.prev;
+  floorIdx = floors.indexOf(ws); sel = { wx: u.wx, wy: u.wy };
+  $('undo').disabled = undoStack.length === 0;
+  renderFloors(); renderGrid(); renderPanel(); requestSave(); toast('되돌렸어요.');
+}
+$('clearTile').onclick = () => { if (sel && confirm('이 칸의 지문을 모두 지울까요? 엑셀에서도 지워집니다.')) deleteLines(); };
+$('undo').onclick = undo;
+
+/* ── 저장 ── */
+function setStatus(kind, text) {
+  $('status').className = 'status ' + kind; $('statusText').textContent = text;
+  $('retry').classList.toggle('hidden', kind !== 'error');
+  $('download').classList.toggle('hidden', !(kind === 'dirty' || kind === 'error'));
+}
+function requestSave() { saveChain = saveChain.then(save); return saveChain; }
+async function save() {
+  if (!fileHandle) { setStatus('dirty', '아직 엑셀 파일에 반영되지 않았어요'); return; }
+  setStatus('saving', '엑셀에 저장하는 중…');
+  try {
+    if (fileHandle.queryPermission && (await fileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+      if ((await fileHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('permission');
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    const w = await fileHandle.createWritable();
+    await w.write(buf); await w.close();
+    setStatus('saved', '엑셀에 저장됨');
+  } catch (e) {
+    const msg = e.message === 'permission' ? '저장 권한을 허락해야 엑셀에 반영돼요'
+      : '저장하지 못했어요. 엑셀에서 이 파일을 닫고 다시 저장을 눌러 주세요';
+    setStatus('error', msg);
+  }
+}
+$('retry').onclick = () => requestSave();
+$('download').onclick = async () => {
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = fileName || '조사지문.xlsx'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('내려받은 파일로 원래 엑셀 파일을 바꿔 주세요.');
+};
+
+/* ── 키보드 ── */
+document.addEventListener('keydown', e => {
+  if (!wb) return;
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '/') { e.preventDefault(); $('find').focus(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (e.target.closest && e.target.closest('.line, .del, .btn')) { if (e.key === ' ') return; }
+  if (e.key === ' ') { e.preventDefault(); copyNext(); return; }
+  const mv = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+  if (mv) {
+    e.preventDefault();
+    const s = sel || { wx: 13, wy: 13 };
+    sel = { wx: Math.min(26, Math.max(0, s.wx + mv[0])), wy: Math.min(26, Math.max(0, s.wy + mv[1])) };
+    renderGrid(); renderPanel();
+  }
+});
+
+/* ── 알림 ── */
+let toastTimer;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2200); }
+window.addEventListener('beforeunload', e => {
+  if ($('status').classList.contains('dirty') || $('status').classList.contains('error') || $('status').classList.contains('saving')) { e.preventDefault(); e.returnValue = ''; }
+});
+</script>
+</body>
+</html>
